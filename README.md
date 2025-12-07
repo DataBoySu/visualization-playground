@@ -1,6 +1,6 @@
 # GPU Particle Physics Simulation
 
-Real-time GPU-accelerated particle physics with interactive visualization.
+py-game based GPU-accelerated particle physics with interactive visualization.
 
 ## Installation
 
