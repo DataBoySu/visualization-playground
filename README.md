@@ -2,7 +2,7 @@
   <img alt="Bouncing Balls" src="simulation/assets/textanim.gif"/>
 </p>
 
-![Status: WIP](https://img.shields.io/badge/status-WIP-orange.svg) ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg) ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
+![Status: WIP](https://img.shields.io/badge/status-WIP-orange.svg) ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg) ![Cross-platform](https://img.shields.io/badge/platform-cross--platform-brightgreen) ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 
 This is my personal playground where I implement various bonker things to get better at visualizations and physics simulation. Expect experiments, small games, and visualization-first simulations.
 
