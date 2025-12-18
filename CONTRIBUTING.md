@@ -20,16 +20,10 @@ Thanks for your interest in contributing! This repository is a personal sandbox 
 - Label issues with `collab` if you are seeking a co-author or pair programmer.
 - For quick questions, open an issue or start a short PR with a prototype.
 
-## PR checklist
-
-- Add a brief description and screenshots/GIFs when applicable
-- Keep changes focused and documented in the PR message
-- Ensure code follows the style in the repository and includes small tests when reasonable
-
 ## Code of conduct
 
 This is a friendly, inclusive project. Please be respectful. See `CONTRIBUTING.md` for how to get in touch if you experience issues.
 
 ---
 
-Thank you — I'm excited to see what weird and wonderful ideas you bring!
+I'm excited to see what weird and wonderful ideas you bring!
