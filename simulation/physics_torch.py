@@ -15,6 +15,8 @@ def run_particle_physics_torch(gpu_arrays, params, torch):
     should_split = gpu_arrays['should_split']
     split_cooldown = gpu_arrays['split_cooldown']
     ball_color = gpu_arrays['ball_color']
+    health = gpu_arrays.get('health', None)
+    consec_non_own = gpu_arrays.get('consec_non_own', None)
     
     dt = params.get('dt', 0.016)
     G = params['gravity_strength']
@@ -193,17 +195,128 @@ def run_particle_physics_torch(gpu_arrays, params, torch):
             small_i = (~big_balls_array[collision_i]) & big_balls_array[collision_j]
             small_j = (~big_balls_array[collision_j]) & big_balls_array[collision_i]
             
+            # Work on active-subset views
             ball_color_act = ball_color[active_mask]
+            if health is not None and consec_non_own is not None:
+                health_act = health[active_mask]
+                consec_act = consec_non_own[active_mask]
+            else:
+                health_act = None
+                consec_act = None
+
+            # Process collisions where collision_i is small and collision_j is big
             small_i_indices = collision_i[small_i]
             small_i_sources = collision_j[small_i]
             if len(small_i_indices) > 0:
-                ball_color_act[small_i_indices] = ball_color_act[small_i_sources]
-            
+                # Compare colors BEFORE we overwrite small ball color
+                big_cols = ball_color_act[small_i_sources]
+                small_cols = ball_color_act[small_i_indices]
+                diff = torch.norm(big_cols - small_cols, dim=1)
+                same_mask = diff < 0.12
+
+                if health_act is not None:
+                    # same color hits -> +1 health and reset consecutive counter
+                    if torch.any(same_mask):
+                        idxs = small_i_sources[same_mask]
+                        health_act.index_add_(0, idxs, torch.ones_like(idxs, dtype=health_act.dtype))
+                        consec_act[idxs] = 0
+
+                    # non-own-color hits -> -1 health and increment consecutive counter
+                    non_mask = ~same_mask
+                    if torch.any(non_mask):
+                        idxs2 = small_i_sources[non_mask]
+                        health_act.index_add_(0, idxs2, -torch.ones_like(idxs2, dtype=health_act.dtype))
+                        consec_act.index_add_(0, idxs2, torch.ones_like(idxs2, dtype=consec_act.dtype))
+
+                        # Check for explosions (>=50 consecutive non-own hits)
+                        explode_mask = consec_act[idxs2] >= 50
+                        if torch.any(explode_mask):
+                            to_explode_local = idxs2[explode_mask]
+                            # Map local active indices back to global indices
+                            act_indices = torch.where(active_mask)[0]
+                            inactive_indices = torch.where(~active)[0]
+                            # For each big index that must explode, spawn up to 10 small balls
+                            for b_local in to_explode_local.tolist():
+                                b_global = int(act_indices[int(b_local)])
+                                # gather up to 10 inactive slots
+                                if len(inactive_indices) == 0:
+                                    break
+                                take = min(10, len(inactive_indices))
+                                for t_idx in range(take):
+                                    child_global = int(inactive_indices[t_idx])
+                                    # place near parent
+                                    x[child_global] = x[b_global] + (torch.randn(1, device=x.device) * 8).item()
+                                    y[child_global] = y[b_global] + (torch.randn(1, device=x.device) * 8).item()
+                                    angle = torch.rand(1, device=x.device).item() * 2 * 3.14159
+                                    vx[child_global] = float(torch.cos(torch.tensor(angle, device=x.device)).item()) * small_ball_speed
+                                    vy[child_global] = float(torch.sin(torch.tensor(angle, device=x.device)).item()) * small_ball_speed
+                                    mass[child_global] = 1.0
+                                    radius[child_global] = 8.0
+                                    active[child_global] = True
+                                    split_cooldown[child_global] = 5.0
+                                    ball_color[child_global] = ball_color[b_global]
+                                # remove used inactive indices
+                                inactive_indices = inactive_indices[take:]
+                                # reset consecutive counter for this big ball
+                                consec_act[int(b_local)] = 0
+
+            # Process collisions where collision_j is small and collision_i is big (symmetric)
             small_j_indices = collision_j[small_j]
             small_j_sources = collision_i[small_j]
             if len(small_j_indices) > 0:
+                big_cols2 = ball_color_act[small_j_sources]
+                small_cols2 = ball_color_act[small_j_indices]
+                diff2 = torch.norm(big_cols2 - small_cols2, dim=1)
+                same_mask2 = diff2 < 0.12
+
+                if health_act is not None:
+                    if torch.any(same_mask2):
+                        idxs = small_j_sources[same_mask2]
+                        health_act.index_add_(0, idxs, torch.ones_like(idxs, dtype=health_act.dtype))
+                        consec_act[idxs] = 0
+
+                    non_mask2 = ~same_mask2
+                    if torch.any(non_mask2):
+                        idxs2 = small_j_sources[non_mask2]
+                        health_act.index_add_(0, idxs2, -torch.ones_like(idxs2, dtype=health_act.dtype))
+                        consec_act.index_add_(0, idxs2, torch.ones_like(idxs2, dtype=consec_act.dtype))
+
+                        explode_mask2 = consec_act[idxs2] >= 50
+                        if torch.any(explode_mask2):
+                            to_explode_local = idxs2[explode_mask2]
+                            act_indices = torch.where(active_mask)[0]
+                            inactive_indices = torch.where(~active)[0]
+                            for b_local in to_explode_local.tolist():
+                                b_global = int(act_indices[int(b_local)])
+                                if len(inactive_indices) == 0:
+                                    break
+                                take = min(10, len(inactive_indices))
+                                for t_idx in range(take):
+                                    child_global = int(inactive_indices[t_idx])
+                                    x[child_global] = x[b_global] + (torch.randn(1, device=x.device) * 8).item()
+                                    y[child_global] = y[b_global] + (torch.randn(1, device=x.device) * 8).item()
+                                    angle = torch.rand(1, device=x.device).item() * 2 * 3.14159
+                                    vx[child_global] = float(torch.cos(torch.tensor(angle, device=x.device)).item()) * small_ball_speed
+                                    vy[child_global] = float(torch.sin(torch.tensor(angle, device=x.device)).item()) * small_ball_speed
+                                    mass[child_global] = 1.0
+                                    radius[child_global] = 8.0
+                                    active[child_global] = True
+                                    split_cooldown[child_global] = 5.0
+                                    ball_color[child_global] = ball_color[b_global]
+                                inactive_indices = inactive_indices[take:]
+                                consec_act[int(b_local)] = 0
+
+            # After processing health/consec and explosions, propagate color changes to small balls as before
+            if len(small_i_indices) > 0:
+                ball_color_act[small_i_indices] = ball_color_act[small_i_sources]
+            if len(small_j_indices) > 0:
                 ball_color_act[small_j_indices] = ball_color_act[small_j_sources]
-            
+
+            # Write-back for health/consec
+            if health_act is not None:
+                health[active_mask] = health_act
+                consec_non_own[active_mask] = consec_act
+
             ball_color[active_mask] = ball_color_act
             
             color_state_act = color_state[active_mask]
@@ -309,10 +422,31 @@ def run_particle_physics_torch(gpu_arrays, params, torch):
     gpu_arrays['should_split'] = should_split
     gpu_arrays['split_cooldown'] = split_cooldown
     gpu_arrays['ball_color'] = ball_color
+    # Persist health counters if present
+    if 'health' in gpu_arrays:
+        gpu_arrays['health'] = health
+    if 'consec_non_own' in gpu_arrays:
+        gpu_arrays['consec_non_own'] = consec_non_own
     
+    # Detect single remaining big-ball color (win condition)
+    winner_color = None
+    try:
+        big_global = torch.where((gpu_arrays['mass'] >= 100.0) & gpu_arrays['active'])[0]
+        if len(big_global) > 0:
+            big_cols = ball_color[big_global]
+            # Quantize to 0-255 ints and pack into integer codes
+            col_ints = (big_cols * 255.0).to(torch.int32)
+            codes = (col_ints[:, 0] << 16) + (col_ints[:, 1] << 8) + col_ints[:, 2]
+            uniq = torch.unique(codes)
+            if uniq.numel() == 1:
+                winner_color = big_cols[0].cpu().tolist()
+    except Exception:
+        winner_color = None
+
     return {
         'active_count': active_count,
         'small_ball_count': small_ball_count,
         'drop_timer': drop_timer,
         'split_enabled': split_enabled
+        , 'winner_color': winner_color
     }

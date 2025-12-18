@@ -17,6 +17,8 @@ def setup_cupy_arrays(n, cp):
     gpu_arrays['should_split'] = cp.zeros(n, dtype=cp.bool_)  # Mark for splitting
     gpu_arrays['split_cooldown'] = cp.zeros(n, dtype=cp.float32)  # 5-second cooldown after split
     gpu_arrays['ball_color'] = cp.zeros((n, 3), dtype=cp.float32)
+    gpu_arrays['health'] = cp.zeros(n, dtype=cp.float32)
+    gpu_arrays['consec_non_own'] = cp.zeros(n, dtype=cp.int32)
     
     big_ball_colors = cp.array([
         [1.0, 0.2, 0.2],
@@ -36,6 +38,7 @@ def setup_cupy_arrays(n, cp):
         gpu_arrays['radius'][i] = 36.0
         gpu_arrays['active'][i] = True
         gpu_arrays['ball_color'][i] = big_ball_colors[i]
+        gpu_arrays['health'][i] = 50.0
     
     # Initial counters
     counters = {
@@ -69,6 +72,9 @@ def setup_torch_arrays(n, torch):
     gpu_arrays['should_split'] = torch.zeros(n, device=device, dtype=torch.bool)
     gpu_arrays['split_cooldown'] = torch.zeros(n, device=device, dtype=torch.float32)
     gpu_arrays['ball_color'] = torch.zeros((n, 3), device=device, dtype=torch.float32)
+    # Health and consecutive non-own-color hit counters
+    gpu_arrays['health'] = torch.zeros(n, device=device, dtype=torch.float32)
+    gpu_arrays['consec_non_own'] = torch.zeros(n, device=device, dtype=torch.int32)
     
     big_ball_colors = torch.tensor([
         [1.0, 0.2, 0.2],
@@ -88,6 +94,7 @@ def setup_torch_arrays(n, torch):
         gpu_arrays['radius'][i] = 36.0
         gpu_arrays['active'][i] = True
         gpu_arrays['ball_color'][i] = big_ball_colors[i]
+        gpu_arrays['health'][i] = 50.0  # initial health for big balls
     
     counters = {
         'active_count': 4,

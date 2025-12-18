@@ -146,6 +146,36 @@ class BallSimulation:
                     self.drop_timer = result['drop_timer']
                     self.split_enabled = result['split_enabled']
 
+                    # If physics reports a winning color (only one color remains among big balls),
+                    # display it on-screen for 5 seconds then exit.
+                    winner = result.get('winner_color', None)
+                    if winner is not None:
+                        try:
+                            r, g, b = [int(max(0, min(255, c * 255))) for c in winner]
+                        except Exception:
+                            r, g, b = (255, 255, 255)
+
+                        # Draw full-screen overlay with the color and text
+                        try:
+                            viz.screen.fill((r, g, b))
+                            text = viz.font.render('Winner color', True, (255 - r, 255 - g, 255 - b))
+                            tw, th = text.get_size()
+                            viz.screen.blit(text, ((viz.window_size[0] - tw) // 2, (viz.window_size[1] - th) // 2))
+                            viz.pygame.display.flip()
+                        except Exception:
+                            pass
+
+                        # Wait up to 5 seconds while processing events so window stays responsive
+                        wait_start = time.time()
+                        while time.time() - wait_start < 5.0:
+                            for e in viz.pygame.event.get():
+                                if e.type == viz.pygame.QUIT:
+                                    break
+                            time.sleep(0.05)
+
+                        self.running = False
+                        break
+
                     torch.cuda.synchronize()
                     self.iterations += 1
 
