@@ -45,6 +45,7 @@ class BallSimulation:
         self.metrics_sampler = None
         self.running = False
         self.iterations = 0
+        self._terminal_stats_error_printed = False
         
         self.gravity_strength = 500.0
         self.small_ball_speed = 200.0
@@ -123,8 +124,23 @@ class BallSimulation:
                     self.split_enabled = viz.get_split_enabled()
 
                     spawn_requests = viz.get_spawn_requests()
-                    for sim_x, sim_y, count in spawn_requests:
-                        self.spawn_big_balls(sim_x, sim_y, count)
+                    for item in spawn_requests:
+                        # spawn requests are tuples (x, y, count)
+                        try:
+                            sim_x, sim_y, count = item
+                        except Exception:
+                            # ignore malformed requests
+                            continue
+
+                        # If a big ball exists at the click location, pop it instead of spawning
+                        popped, delta_active, delta_small = particle_utils.try_pop_big_ball(self.gpu_arrays, 'torch', sim_x, sim_y, small_count=10)
+                        if popped:
+                            # adjust counters: active_count decreased by 1, small balls increased by delta_small
+                            self.counters['active_count'] = max(0, self.counters.get('active_count', 0) + delta_active)
+                            self.counters['small_ball_count'] = max(0, self.counters.get('small_ball_count', 0) + delta_small)
+                        else:
+                            # regular spawn
+                            self.spawn_big_balls(sim_x, sim_y, count)
 
                     params = {
                         'gravity_strength': self.gravity_strength,
@@ -179,6 +195,9 @@ class BallSimulation:
                     torch.cuda.synchronize()
                     self.iterations += 1
 
+                    render_fps = 0
+                    gpu_util = 0
+
                     positions, masses, colors, glows = self.get_particle_sample(max_samples=2000)
 
                     if positions is not None:
@@ -206,35 +225,62 @@ class BallSimulation:
                             elapsed_time=elapsed
                         )
 
-                        # Print colorful terminal stats periodically to aid monitoring
+                    # Print colorful terminal stats periodically to aid monitoring
+                    if self.iterations % 10 == 0:
                         try:
-                            if self.iterations % 10 == 0:
-                                iter_per_sec = (self.iterations / elapsed) if elapsed > 0 else 0
-                                active = self.counters.get('active_count', 0)
-                                small = self.counters.get('small_ball_count', 0)
-                                big = max(0, active - small)
+                            iter_per_sec = (self.iterations / elapsed) if elapsed > 0 else 0
+                            active_count = self.counters.get('active_count', 0)
+                            small = self.counters.get('small_ball_count', 0)
+                            big = max(0, active_count - small)
 
-                                # Animated hue based on time for color cycling
+                            # Try to find color of the big ball with the most health
+                            r = g = b = None
+                            try:
+                                health = self.gpu_arrays.get('health', None)
+                                ball_color = self.gpu_arrays.get('ball_color', None)
+                                mass = self.gpu_arrays.get('mass', None)
+                                active_mask = self.gpu_arrays.get('active', None)
+                                if health is not None and ball_color is not None and mass is not None and active_mask is not None:
+                                    big_mask = (mass >= 100.0) & active_mask
+                                    if int(torch.sum(big_mask)) > 0:
+                                        big_indices = torch.where(big_mask)[0]
+                                        h_vals = health[big_indices].cpu().numpy()
+                                        if h_vals.size > 0:
+                                            argmax_local = int(h_vals.argmax())
+                                            idx = int(big_indices[argmax_local])
+                                            col = ball_color[idx].cpu().numpy()
+                                            r, g, b = [int(max(0, min(255, c * 255))) for c in col]
+                            except Exception as e:
+                                # compute fallback color and record debug once
+                                r = g = b = None
+                                if not self._terminal_stats_error_printed:
+                                    print(f"[DEBUG] terminal color selection failed: {e}", file=sys.stderr)
+                                    self._terminal_stats_error_printed = True
+
+                            if r is None:
                                 hue = (time.time() * 0.18) % 1.0
                                 r, g, b = _hsv_to_rgb(hue, 0.72, 0.95)
-                                # ANSI 24-bit color sequence
-                                color_seq = f"\x1b[38;2;{r};{g};{b}m"
-                                reset_seq = "\x1b[0m"
 
-                                spinner_frames = ['◐', '◓', '◑', '◒']
-                                spinner = spinner_frames[self.iterations % len(spinner_frames)]
+                            # ANSI 24-bit color sequence
+                            color_seq = f"\x1b[38;2;{r};{g};{b}m"
+                            reset_seq = "\x1b[0m"
 
-                                line = (
-                                    f"Iter: {self.iterations:>6,} | {render_fps:>5.1f} FPS | "
-                                    f"GPU: {gpu_util:>3.0f}% | Active: {active:>6,} | Small: {small:>6,} | Big: {big:>6,} "
-                                    f"{spinner}"
-                                )
+                            spinner_frames = ['◐', '◓', '◑', '◒']
+                            spinner = spinner_frames[self.iterations % len(spinner_frames)]
 
-                                # Overwrite the same terminal line with color
-                                print(f"\r{color_seq}{line}{reset_seq}", end='', flush=True)
-                        except Exception:
-                            # Printing must not interrupt the simulation
-                            pass
+                            line = (
+                                f"Iter: {self.iterations:>6,} | {render_fps:>5.1f} FPS | "
+                                f"GPU: {gpu_util:>3.0f}% | Active: {active_count:>6,} | Small: {small:>6,} | Big: {big:>6,} "
+                                f"{spinner}"
+                            )
+
+                            # Overwrite the same terminal line with color
+                            print(f"\r{color_seq}{line}{reset_seq}", end='', flush=True)
+                        except Exception as e:
+                            # Ensure printing errors don't stop the simulation; print debug once
+                            if not self._terminal_stats_error_printed:
+                                print(f"[DEBUG] terminal printing failed: {e}", file=sys.stderr)
+                                self._terminal_stats_error_printed = True
 
                     clock.tick()
             except KeyboardInterrupt:

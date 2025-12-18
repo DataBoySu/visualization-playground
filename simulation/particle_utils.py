@@ -233,3 +233,67 @@ def update_big_ball_count(gpu_arrays, method, target_count, current_active_count
     
     return current_active_count
 
+def try_pop_big_ball(gpu_arrays, method, x, y, small_count=10):
+    """Try to pop a big ball at (x,y). If a big ball is under the click, deactivate it and spawn small balls of the same color.
+    Returns (popped: bool, active_count_delta: int, small_count_delta: int)
+    """
+    if method == 'torch':
+        import torch
+        active = gpu_arrays['active']
+        mass = gpu_arrays['mass']
+        xpos = gpu_arrays['x']
+        ypos = gpu_arrays['y']
+        radius = gpu_arrays['radius']
+        ball_color = gpu_arrays['ball_color']
+
+        big_mask = active & (mass >= 100.0)
+        if torch.sum(big_mask) == 0:
+            return False, 0, 0
+
+        big_indices = torch.where(big_mask)[0]
+        bx = xpos[big_indices]
+        by = ypos[big_indices]
+        br = radius[big_indices]
+
+        # distances
+        dx = bx - x
+        dy = by - y
+        dist = torch.sqrt(dx * dx + dy * dy)
+
+        # find nearest big ball
+        min_idx = torch.argmin(dist)
+        if dist[min_idx] <= (br[min_idx] + 8.0):
+            target_global = int(big_indices[int(min_idx)])
+            color = ball_color[target_global]
+
+            # deactivate big ball
+            active[target_global] = False
+            mass[target_global] = 0.0
+            radius[target_global] = 0.0
+            xpos[target_global] = 0.0
+            ypos[target_global] = 0.0
+            gpu_arrays['vx'][target_global] = 0.0
+            gpu_arrays['vy'][target_global] = 0.0
+
+            # spawn small balls from inactive pool
+            inactive = torch.where(~active)[0]
+            spawn = min(len(inactive), small_count)
+            for i in range(spawn):
+                child = int(inactive[i])
+                xpos[child] = x + float((torch.randn(1) * 8.0).item())
+                ypos[child] = y + float((torch.randn(1) * 8.0).item())
+                angle = float((torch.rand(1) * 2.0 * 3.14159).item())
+                gpu_arrays['vx'][child] = float(torch.cos(torch.tensor(angle)).item()) * 200.0
+                gpu_arrays['vy'][child] = float(torch.sin(torch.tensor(angle)).item()) * 200.0
+                gpu_arrays['mass'][child] = 1.0
+                gpu_arrays['radius'][child] = 8.0
+                gpu_arrays['active'][child] = True
+                gpu_arrays['split_cooldown'][child] = 5.0
+                gpu_arrays['ball_color'][child] = color
+
+            # active count delta = spawned smalls - 1 (big removed)
+            return True, (spawn - 1), spawn
+
+    # Cupy and other methods not implemented
+    return False, 0, 0
+
