@@ -32,7 +32,24 @@ class BallSimulation:
         
     def initialize(self):
         import torch
-        
+
+        # Enforce CUDA 12.x compatibility
+        cuda_version = getattr(torch.version, 'cuda', None) or torch.version.cuda
+        if not torch.cuda.is_available() or not cuda_version:
+            raise RuntimeError(
+                f"CUDA GPU not available or PyTorch not built with CUDA. "
+                "This simulation requires CUDA 12.x and PyTorch/CuPy built for CUDA 12.x."
+            )
+        try:
+            major = int(str(cuda_version).split('.')[0])
+        except Exception:
+            major = None
+        if major != 12:
+            raise RuntimeError(
+                f"Incompatible CUDA version detected: {cuda_version!s}. "
+                "This project requires CUDA major version 12.x. Please install PyTorch/CuPy built for CUDA 12.x."
+            )
+
         self.gpu_arrays, self.counters = gpu_setup.setup_torch_arrays(self.particle_count, torch)
         self.metrics_sampler = metrics_sampler.GPUMetricsSampler()
         self.metrics_sampler.start()

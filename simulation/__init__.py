@@ -7,7 +7,6 @@ from . import particle_utils
 from . import gpu_setup
 from . import visualizer
 from . import event_handler
-from . import backend_stress
 from . import metrics_sampler
 from . import ui_components
 
@@ -17,7 +16,6 @@ __all__ = [
     'gpu_setup',
     'visualizer',
     'event_handler',
-    'backend_stress',
     'metrics_sampler',
     'ui_components',
 ]

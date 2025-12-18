@@ -10,6 +10,8 @@ pip install -r requirements.txt
 
 Requires: Python 3.10+, NVIDIA GPU with CUDA
 
+Note: This simulation requires CUDA 12.x (CUDA 12.0+ builds). If your system has a different CUDA major version installed, install CUDA 12.x and matching CuPy/PyTorch wheels. The project enforces CUDA 12.x only.
+
 ## Usage
 
 ```bash

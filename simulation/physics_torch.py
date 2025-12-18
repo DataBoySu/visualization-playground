@@ -23,10 +23,8 @@ def run_particle_physics_torch(gpu_arrays, params, torch):
     max_balls_cap = int(params['max_balls_cap'])
     split_enabled = params['split_enabled']
     
-    old_active_count = params.get('active_count', 0)
     active_count = int(torch.sum(active).item())
     small_ball_count = int(torch.sum((mass < 100.0) & active).item())
-    big_ball_count = active_count - small_ball_count
     drop_timer = params['drop_timer']
     
     if small_ball_count < initial_balls:
@@ -289,7 +287,6 @@ def run_particle_physics_torch(gpu_arrays, params, torch):
             should_split[split_indices] = False
     
     if small_ball_count > max_balls_cap:
-        excess = small_ball_count - max_balls_cap
         small_balls = (mass < 100.0) & active
         small_indices = torch.where(small_balls)[0]
         if len(small_indices) > max_balls_cap:

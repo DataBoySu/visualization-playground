@@ -116,7 +116,7 @@ def spawn_big_balls(gpu_arrays, method, x, y, count, current_active_count):
         for i in range(count):
             inactive_indices = cp.where(~active)[0]
             if len(inactive_indices) == 0:
-                print(f"[Spawn] No inactive slots available!")
+                print("[Spawn] No inactive slots available!")
                 break
             
             idx = int(inactive_indices[0])
